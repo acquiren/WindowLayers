@@ -521,10 +521,13 @@ internal sealed class SettingsForm : Form
         AutoScaleMode = AutoScaleMode.Dpi;
         var workArea = Screen.FromPoint(Cursor.Position).WorkingArea;
         ClientSize = new Size(
-            Math.Min(700, Math.Max(570, workArea.Width - 100)),
-            Math.Min(820, Math.Max(540, workArea.Height - 100)));
-        MinimumSize = new Size(570, 540);
-        StartPosition = FormStartPosition.CenterScreen;
+            Math.Min(workArea.Width, Math.Min(700, Math.Max(420, workArea.Width - 80))),
+            Math.Min(workArea.Height, Math.Min(820, Math.Max(400, workArea.Height - 80))));
+        MinimumSize = new Size(Math.Min(570, workArea.Width), Math.Min(540, workArea.Height));
+        StartPosition = FormStartPosition.Manual;
+        Location = new Point(
+            workArea.Left + (workArea.Width - Width) / 2,
+            workArea.Top + (workArea.Height - Height) / 2);
         BackColor = Color.FromArgb(244, 247, 251);
         FormClosing += (_, e) =>
         {
@@ -611,7 +614,7 @@ internal sealed class SettingsForm : Form
         }, 0, 0);
         header.Controls.Add(new Label
         {
-            Text = "配置快捷键与动态边框；开机自启动可在托盘菜单切换",
+            Text = "配置快捷键与动态边框",
             AutoSize = true,
             ForeColor = Color.FromArgb(193, 210, 229),
             Margin = Padding.Empty
@@ -668,6 +671,10 @@ internal sealed class SettingsForm : Form
         var effectCard = CreateCard("边框效果", "颜色、粗细和速度会同时用于置顶与置底边框。", effectRows);
         effectCard.Margin = Padding.Empty;
         content.Controls.Add(effectCard);
+        content.MinimumSize = new Size(
+            Math.Max(510, (int)effectRows.ColumnStyles[0].Width +
+                TextRenderer.MeasureText(_topColor.Text, _topColor.Font).Width + 84), 0);
+        viewport.AutoScrollMinSize = new Size(content.MinimumSize.Width + viewport.Padding.Horizontal, 0);
 
         var footer = new TableLayoutPanel
         {
