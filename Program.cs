@@ -20,7 +20,8 @@ internal static class Program
         Application.SetHighDpiMode(HighDpiMode.PerMonitorV2);
         Application.EnableVisualStyles();
         Application.SetCompatibleTextRenderingDefault(false);
-        Application.Run(new SettingsForm());
+        using var settings = new SettingsForm();
+        Application.Run(new ApplicationContext());
     }
 }
 
@@ -562,15 +563,12 @@ internal sealed class SettingsForm : Form
         LoadControls();
         _topBorder.Configure(_settings);
         _bottomBorder.Configure(_settings);
-        Shown += (_, _) =>
-        {
-            PinSettings();
-            if (!RegisterHotkeys(_settings))
-                MessageBox.Show("默认快捷键注册失败，请在设置中改用其他组合。", Text);
-            _foregroundHook = Native.SetWinEventHook(
-                Native.EVENT_SYSTEM_FOREGROUND, Native.EVENT_SYSTEM_FOREGROUND,
-                IntPtr.Zero, _foregroundCallback, 0, 0, 0);
-        };
+        if (!RegisterHotkeys(_settings))
+            _tray.ShowBalloonTip(3000, Text, "快捷键注册失败，请从托盘打开设置并更换组合。", ToolTipIcon.Warning);
+        _foregroundHook = Native.SetWinEventHook(
+            Native.EVENT_SYSTEM_FOREGROUND, Native.EVENT_SYSTEM_FOREGROUND,
+            IntPtr.Zero, _foregroundCallback, 0, 0, 0);
+        Shown += (_, _) => PinSettings();
         VisibleChanged += (_, _) =>
         {
             if (!Visible && _topWindow == Handle) ClearTop();
@@ -1196,5 +1194,6 @@ internal sealed class SettingsForm : Form
         _topBorder.Dispose();
         _bottomBorder.Dispose();
         Close();
+        Application.ExitThread();
     }
 }
