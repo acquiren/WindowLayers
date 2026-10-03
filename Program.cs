@@ -489,6 +489,7 @@ internal sealed class SettingsForm : Form
     private readonly System.Windows.Forms.Timer _timer = new() { Interval = 50 };
     private readonly Icon _appIcon;
     private readonly NotifyIcon _tray;
+    private readonly ToolStripMenuItem _startupMenuItem;
     private readonly Native.WinEventCallback _foregroundCallback;
     private readonly TextBox _topHotkey = new();
     private readonly TextBox _bottomHotkey = new();
@@ -497,7 +498,6 @@ internal sealed class SettingsForm : Form
     private readonly NumericUpDown _thickness = new();
     private readonly NumericUpDown _speed = new();
     private readonly CheckBox _animate = new() { Text = "启用动态边框", AutoSize = true };
-    private readonly CheckBox _startup = new() { Text = "登录 Windows 后自动启动", AutoSize = true };
     private readonly Label _topStatus = new() { AutoSize = true };
     private readonly Label _bottomStatus = new() { AutoSize = true };
     private IntPtr _topWindow;
@@ -517,11 +517,15 @@ internal sealed class SettingsForm : Form
         _appIcon = System.Drawing.Icon.ExtractAssociatedIcon(Application.ExecutablePath)
             ?? SystemIcons.Application;
         Icon = _appIcon;
-        Width = 520;
-        Height = 480;
-        MinimumSize = new Size(490, 440);
-        StartPosition = FormStartPosition.CenterScreen;
         Font = new Font("Microsoft YaHei UI", 9);
+        AutoScaleMode = AutoScaleMode.Dpi;
+        var workArea = Screen.FromPoint(Cursor.Position).WorkingArea;
+        ClientSize = new Size(
+            Math.Min(700, Math.Max(570, workArea.Width - 100)),
+            Math.Min(820, Math.Max(540, workArea.Height - 100)));
+        MinimumSize = new Size(570, 540);
+        StartPosition = FormStartPosition.CenterScreen;
+        BackColor = Color.FromArgb(244, 247, 251);
         FormClosing += (_, e) =>
         {
             if (_exit) return;
@@ -533,6 +537,14 @@ internal sealed class SettingsForm : Form
         menu.Items.Add("打开设置", null, (_, _) => ShowSettings());
         menu.Items.Add("取消置顶", null, (_, _) => ClearTop());
         menu.Items.Add("取消置底", null, (_, _) => ClearBottom(true));
+        menu.Items.Add(new ToolStripSeparator());
+        _startupMenuItem = new ToolStripMenuItem("开机自启动")
+        {
+            Checked = _settings.StartWithWindows
+        };
+        _startupMenuItem.Click += (_, _) => ToggleStartup();
+        menu.Items.Add(_startupMenuItem);
+        menu.Items.Add(new ToolStripSeparator());
         menu.Items.Add("退出", null, (_, _) => Exit());
         _tray = new NotifyIcon
         {
@@ -562,60 +574,278 @@ internal sealed class SettingsForm : Form
 
     private void BuildUi()
     {
-        var grid = new TableLayoutPanel
+        var root = new TableLayoutPanel
         {
             Dock = DockStyle.Fill,
-            Padding = new Padding(20),
-            ColumnCount = 2,
-            RowCount = 9
+            ColumnCount = 1,
+            RowCount = 3,
+            Margin = Padding.Empty,
+            Padding = Padding.Empty
         };
-        grid.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 165));
-        grid.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
-        for (int i = 0; i < 9; i++) grid.RowStyles.Add(new RowStyle(SizeType.Absolute, i == 8 ? 65 : 40));
-        Controls.Add(grid);
+        root.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+        root.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+        root.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
+        root.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+        Controls.Add(root);
 
-        AddRow(grid, 0, "置顶快捷键", _topHotkey);
-        AddRow(grid, 1, "置底快捷键", _bottomHotkey);
+        var header = new TableLayoutPanel
+        {
+            Dock = DockStyle.Fill,
+            AutoSize = true,
+            AutoSizeMode = AutoSizeMode.GrowAndShrink,
+            ColumnCount = 1,
+            RowCount = 2,
+            Padding = new Padding(24, 14, 24, 16),
+            BackColor = Color.FromArgb(22, 41, 66)
+        };
+        header.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+        header.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+        header.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+        header.Controls.Add(new Label
+        {
+            Text = "窗口层级工具",
+            AutoSize = true,
+            Font = new Font(Font.FontFamily, 16, FontStyle.Bold),
+            ForeColor = Color.White,
+            Margin = new Padding(0, 0, 0, 5)
+        }, 0, 0);
+        header.Controls.Add(new Label
+        {
+            Text = "配置快捷键与动态边框；开机自启动可在托盘菜单切换",
+            AutoSize = true,
+            ForeColor = Color.FromArgb(193, 210, 229),
+            Margin = Padding.Empty
+        }, 0, 1);
+        root.Controls.Add(header, 0, 0);
+
+        var viewport = new Panel
+        {
+            Dock = DockStyle.Fill,
+            AutoScroll = true,
+            Padding = new Padding(22, 20, 22, 8),
+            BackColor = BackColor
+        };
+        var content = new TableLayoutPanel
+        {
+            Dock = DockStyle.Top,
+            AutoSize = true,
+            AutoSizeMode = AutoSizeMode.GrowAndShrink,
+            ColumnCount = 1,
+            Padding = Padding.Empty,
+            Margin = Padding.Empty
+        };
+        content.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+        viewport.Controls.Add(content);
+        root.Controls.Add(viewport, 0, 1);
+
+        var shortcutRows = CreateRows(2);
+        AddRow(shortcutRows, 0, "置顶快捷键", _topHotkey);
+        AddRow(shortcutRows, 1, "置底快捷键", _bottomHotkey);
         _topHotkey.ReadOnly = true;
         _bottomHotkey.ReadOnly = true;
+        StyleHotkeyBox(_topHotkey);
+        StyleHotkeyBox(_bottomHotkey);
         _topHotkey.KeyDown += (_, e) => CaptureHotkey(e, true);
         _bottomHotkey.KeyDown += (_, e) => CaptureHotkey(e, false);
-        AddRow(grid, 2, "置顶边框颜色", _topColor);
-        AddRow(grid, 3, "置底边框颜色", _bottomColor);
-        _topColor.Text = "选择颜色";
-        _bottomColor.Text = "选择颜色";
+        content.Controls.Add(CreateCard("快捷键", "点击输入框，再按下包含修饰键的组合键。", shortcutRows));
+
+        var effectRows = CreateRows(5);
+        AddRow(effectRows, 0, "置顶边框颜色", _topColor);
+        AddRow(effectRows, 1, "置底边框颜色", _bottomColor);
+        _topColor.Text = "选择置顶颜色";
+        _bottomColor.Text = "选择置底颜色";
+        StyleColorButton(_topColor);
+        StyleColorButton(_bottomColor);
         _topColor.Click += (_, _) => PickColor(true);
         _bottomColor.Click += (_, _) => PickColor(false);
-
         _thickness.Minimum = 2;
         _thickness.Maximum = 16;
         _speed.Minimum = 1;
         _speed.Maximum = 10;
-        AddRow(grid, 4, "边框粗细", _thickness);
-        AddRow(grid, 5, "动画速度", _speed);
-        grid.Controls.Add(_animate, 1, 6);
-        grid.Controls.Add(_startup, 1, 7);
+        AddRow(effectRows, 2, "边框粗细", NumericField(_thickness, "像素"));
+        AddRow(effectRows, 3, "动画速度", NumericField(_speed, "1 慢 · 10 快"));
+        AddRow(effectRows, 4, "动态效果", _animate);
+        var effectCard = CreateCard("边框效果", "颜色、粗细和速度会同时用于置顶与置底边框。", effectRows);
+        effectCard.Margin = Padding.Empty;
+        content.Controls.Add(effectCard);
 
-        var footer = new FlowLayoutPanel { Dock = DockStyle.Fill, FlowDirection = FlowDirection.RightToLeft };
-        var apply = new Button { Text = "保存设置", Width = 100, Height = 30 };
-        apply.Click += (_, _) => SaveControls();
-        footer.Controls.Add(apply);
-        var hide = new Button { Text = "隐藏到托盘", Width = 110, Height = 30 };
-        hide.Click += (_, _) => Hide();
-        footer.Controls.Add(hide);
-        grid.Controls.Add(footer, 1, 8);
-
-        var status = new FlowLayoutPanel { Dock = DockStyle.Fill, FlowDirection = FlowDirection.TopDown };
+        var footer = new TableLayoutPanel
+        {
+            Dock = DockStyle.Fill,
+            AutoSize = true,
+            AutoSizeMode = AutoSizeMode.GrowAndShrink,
+            ColumnCount = 1,
+            RowCount = 2,
+            Padding = new Padding(22, 8, 22, 10),
+            BackColor = Color.White
+        };
+        footer.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+        footer.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+        footer.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+        root.Controls.Add(footer, 0, 2);
+        var status = new FlowLayoutPanel
+        {
+            Dock = DockStyle.Fill,
+            AutoSize = true,
+            AutoSizeMode = AutoSizeMode.GrowAndShrink,
+            WrapContents = false,
+            FlowDirection = FlowDirection.LeftToRight,
+            Margin = Padding.Empty
+        };
+        StyleStatus(_topStatus, Color.FromArgb(224, 247, 252));
+        StyleStatus(_bottomStatus, Color.FromArgb(255, 237, 228));
         status.Controls.Add(_topStatus);
         status.Controls.Add(_bottomStatus);
-        grid.Controls.Add(status, 0, 8);
+        footer.Controls.Add(status, 0, 0);
+
+        var actions = new FlowLayoutPanel
+        {
+            Dock = DockStyle.Fill,
+            AutoSize = true,
+            AutoSizeMode = AutoSizeMode.GrowAndShrink,
+            FlowDirection = FlowDirection.RightToLeft,
+            WrapContents = false,
+            Margin = Padding.Empty
+        };
+        var apply = new Button { Text = "保存设置", AutoSize = true, MinimumSize = new Size(126, 40) };
+        StyleActionButton(apply, true);
+        apply.Click += (_, _) => SaveControls();
+        actions.Controls.Add(apply);
+        var hide = new Button { Text = "隐藏到托盘", AutoSize = true, MinimumSize = new Size(126, 40) };
+        StyleActionButton(hide, false);
+        hide.Click += (_, _) => Hide();
+        actions.Controls.Add(hide);
+        footer.Controls.Add(actions, 0, 1);
     }
 
-    private static void AddRow(TableLayoutPanel grid, int row, string title, Control input)
+    private TableLayoutPanel CreateRows(int count)
     {
-        grid.Controls.Add(new Label { Text = title, TextAlign = ContentAlignment.MiddleLeft, Dock = DockStyle.Fill }, 0, row);
+        int labelWidth = Math.Max(155, TextRenderer.MeasureText("置顶边框颜色", Font).Width + 20);
+        int rowHeight = Math.Max(46, TextRenderer.MeasureText("置顶边框颜色", Font).Height + 20);
+        var rows = new TableLayoutPanel
+        {
+            Dock = DockStyle.Top,
+            AutoSize = true,
+            AutoSizeMode = AutoSizeMode.GrowAndShrink,
+            ColumnCount = 2,
+            RowCount = count,
+            Margin = Padding.Empty
+        };
+        rows.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, labelWidth));
+        rows.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+        for (int i = 0; i < count; i++)
+            rows.RowStyles.Add(new RowStyle(SizeType.Absolute, rowHeight));
+        return rows;
+    }
+
+    private Control CreateCard(string title, string hint, TableLayoutPanel rows)
+    {
+        var card = new TableLayoutPanel
+        {
+            Dock = DockStyle.Top,
+            AutoSize = true,
+            AutoSizeMode = AutoSizeMode.GrowAndShrink,
+            ColumnCount = 1,
+            RowCount = 3,
+            Padding = new Padding(18, 14, 18, 16),
+            Margin = new Padding(0, 0, 0, 14),
+            BackColor = Color.White,
+            BorderStyle = BorderStyle.FixedSingle
+        };
+        card.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+        card.Controls.Add(new Label
+        {
+            Text = title,
+            Dock = DockStyle.Fill,
+            AutoSize = true,
+            Font = new Font(Font.FontFamily, 11, FontStyle.Bold),
+            ForeColor = Color.FromArgb(27, 47, 72),
+            Margin = new Padding(0, 0, 0, 5)
+        }, 0, 0);
+        card.Controls.Add(new Label
+        {
+            Text = hint,
+            Dock = DockStyle.Fill,
+            AutoSize = true,
+            ForeColor = Color.FromArgb(100, 116, 139),
+            Margin = new Padding(0, 0, 0, 10)
+        }, 0, 1);
+        card.Controls.Add(rows, 0, 2);
+        return card;
+    }
+
+    private static void AddRow(TableLayoutPanel rows, int row, string title, Control input)
+    {
+        rows.Controls.Add(new Label
+        {
+            Text = title,
+            TextAlign = ContentAlignment.MiddleLeft,
+            Dock = DockStyle.Fill,
+            ForeColor = Color.FromArgb(46, 63, 84),
+            Margin = Padding.Empty
+        }, 0, row);
         input.Dock = DockStyle.Fill;
-        grid.Controls.Add(input, 1, row);
+        input.Margin = new Padding(0, 5, 0, 5);
+        rows.Controls.Add(input, 1, row);
+    }
+
+    private static Control NumericField(NumericUpDown input, string unit)
+    {
+        var field = new FlowLayoutPanel
+        {
+            Dock = DockStyle.Fill,
+            FlowDirection = FlowDirection.LeftToRight,
+            WrapContents = false,
+            Margin = Padding.Empty
+        };
+        input.Width = 105;
+        input.Height = Math.Max(31, input.PreferredHeight);
+        input.Margin = new Padding(0, 2, 12, 0);
+        field.Controls.Add(input);
+        field.Controls.Add(new Label
+        {
+            Text = unit,
+            AutoSize = true,
+            ForeColor = Color.FromArgb(100, 116, 139),
+            Margin = new Padding(0, 7, 0, 0)
+        });
+        return field;
+    }
+
+    private static void StyleHotkeyBox(TextBox box)
+    {
+        box.BorderStyle = BorderStyle.FixedSingle;
+        box.BackColor = Color.FromArgb(248, 250, 252);
+        box.ForeColor = Color.FromArgb(24, 49, 75);
+        box.Font = new Font(box.Font.FontFamily, 10, FontStyle.Bold);
+    }
+
+    private static void StyleColorButton(Button button)
+    {
+        button.FlatStyle = FlatStyle.Flat;
+        button.FlatAppearance.BorderSize = 0;
+        button.Font = new Font(button.Font.FontFamily, 9, FontStyle.Bold);
+    }
+
+    private static void StyleStatus(Label label, Color background)
+    {
+        label.AutoSize = true;
+        label.BackColor = background;
+        label.ForeColor = Color.FromArgb(37, 62, 84);
+        label.Padding = new Padding(10, 5, 10, 5);
+        label.Margin = new Padding(0, 0, 10, 0);
+    }
+
+    private static void StyleActionButton(Button button, bool primary)
+    {
+        button.FlatStyle = FlatStyle.Flat;
+        button.FlatAppearance.BorderSize = primary ? 0 : 1;
+        button.FlatAppearance.BorderColor = Color.FromArgb(202, 213, 225);
+        button.BackColor = primary ? Color.FromArgb(30, 111, 211) : Color.White;
+        button.ForeColor = primary ? Color.White : Color.FromArgb(37, 62, 84);
+        button.Font = new Font(button.Font.FontFamily, 9, FontStyle.Bold);
+        button.Padding = new Padding(12, 6, 12, 6);
+        button.Margin = new Padding(8, 0, 0, 0);
     }
 
     private void LoadControls()
@@ -626,12 +856,11 @@ internal sealed class SettingsForm : Form
         _editBottomMods = _settings.BottomModifiers;
         _topHotkey.Text = FormatHotkey(_editTopKey, _editTopMods);
         _bottomHotkey.Text = FormatHotkey(_editBottomKey, _editBottomMods);
-        _topColor.BackColor = Color.FromArgb(_settings.TopColor);
-        _bottomColor.BackColor = Color.FromArgb(_settings.BottomColor);
+        SetColorButton(_topColor, Color.FromArgb(_settings.TopColor));
+        SetColorButton(_bottomColor, Color.FromArgb(_settings.BottomColor));
         _thickness.Value = Math.Clamp(_settings.Thickness, 2, 16);
         _speed.Value = Math.Clamp(_settings.Speed, 1, 10);
         _animate.Checked = _settings.Animate;
-        _startup.Checked = _settings.StartWithWindows;
     }
 
     private void CaptureHotkey(KeyEventArgs e, bool top)
@@ -686,9 +915,16 @@ internal sealed class SettingsForm : Form
         using var dialog = new ColorDialog { FullOpen = true, Color = top ? _topColor.BackColor : _bottomColor.BackColor };
         if (dialog.ShowDialog(this) == DialogResult.OK)
         {
-            if (top) _topColor.BackColor = dialog.Color;
-            else _bottomColor.BackColor = dialog.Color;
+            if (top) SetColorButton(_topColor, dialog.Color);
+            else SetColorButton(_bottomColor, dialog.Color);
         }
+    }
+
+    private static void SetColorButton(Button button, Color color)
+    {
+        button.BackColor = color;
+        double brightness = color.R * 0.299 + color.G * 0.587 + color.B * 0.114;
+        button.ForeColor = brightness < 145 ? Color.White : Color.FromArgb(19, 42, 65);
     }
 
     private void SaveControls()
@@ -709,7 +945,7 @@ internal sealed class SettingsForm : Form
             Thickness = (int)_thickness.Value,
             Speed = (int)_speed.Value,
             Animate = _animate.Checked,
-            StartWithWindows = _startup.Checked
+            StartWithWindows = _settings.StartWithWindows
         };
         if (!RegisterHotkeys(candidate))
         {
@@ -722,6 +958,7 @@ internal sealed class SettingsForm : Form
             SetStartup(candidate.StartWithWindows);
             candidate.Save();
             _settings = candidate;
+            _startupMenuItem.Checked = _settings.StartWithWindows;
             _topBorder.Configure(_settings);
             _bottomBorder.Configure(_settings);
             MessageBox.Show("设置已保存。", Text);
@@ -729,6 +966,7 @@ internal sealed class SettingsForm : Form
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or System.Security.SecurityException)
         {
             RegisterHotkeys(_settings);
+            try { SetStartup(_settings.StartWithWindows); } catch { }
             MessageBox.Show("保存失败：" + ex.Message, Text);
         }
     }
@@ -740,6 +978,25 @@ internal sealed class SettingsForm : Form
         if (key is null) throw new IOException("无法打开启动项注册表。");
         if (enabled) key.SetValue("WindowLayers", "\"" + Application.ExecutablePath + "\"");
         else key.DeleteValue("WindowLayers", throwOnMissingValue: false);
+    }
+
+    private void ToggleStartup()
+    {
+        bool previous = _settings.StartWithWindows;
+        try
+        {
+            SetStartup(!previous);
+            _settings.StartWithWindows = !previous;
+            _settings.Save();
+            _startupMenuItem.Checked = !previous;
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or System.Security.SecurityException)
+        {
+            _settings.StartWithWindows = previous;
+            try { SetStartup(previous); } catch { }
+            _startupMenuItem.Checked = previous;
+            MessageBox.Show("更新开机自启动失败：" + ex.Message, Text);
+        }
     }
 
     private bool RegisterHotkeys(AppSettings settings)
