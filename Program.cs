@@ -564,11 +564,16 @@ internal sealed class SettingsForm : Form
         _bottomBorder.Configure(_settings);
         Shown += (_, _) =>
         {
+            PinSettings();
             if (!RegisterHotkeys(_settings))
                 MessageBox.Show("默认快捷键注册失败，请在设置中改用其他组合。", Text);
             _foregroundHook = Native.SetWinEventHook(
                 Native.EVENT_SYSTEM_FOREGROUND, Native.EVENT_SYSTEM_FOREGROUND,
                 IntPtr.Zero, _foregroundCallback, 0, 0, 0);
+        };
+        VisibleChanged += (_, _) =>
+        {
+            if (!Visible && _topWindow == Handle) ClearTop();
         };
         _timer.Tick += (_, _) => UpdateWindows();
         _timer.Start();
@@ -1045,6 +1050,7 @@ internal sealed class SettingsForm : Form
 
     private void ToggleTop()
     {
+        if (Visible) return;
         var target = TargetWindow();
         if (target == IntPtr.Zero) return;
         if (target == _topWindow) { ClearTop(); return; }
@@ -1085,7 +1091,9 @@ internal sealed class SettingsForm : Form
 
     private void ClearTop()
     {
-        if (Native.IsWindow(_topWindow))
+        if (_topWindow == Handle)
+            TopMost = false;
+        else if (Native.IsWindow(_topWindow))
             Native.SetWindowPos(_topWindow, Native.HWND_NOTOPMOST, 0, 0, 0, 0, Native.POSITION_FLAGS);
         _topWindow = IntPtr.Zero;
         _topBorder.Hide();
@@ -1159,7 +1167,18 @@ internal sealed class SettingsForm : Form
     {
         Show();
         WindowState = FormWindowState.Normal;
+        PinSettings();
         Activate();
+    }
+
+    private void PinSettings()
+    {
+        if (_topWindow == Handle) return;
+        ClearTop();
+        TopMost = true;
+        _topWindow = Handle;
+        _topBorder.UpdateFor(Handle);
+        UpdateStatus();
     }
 
     private void Exit()
