@@ -30,8 +30,9 @@
 
 ## 快速开始
 
-> [!NOTE]
-> 当前仓库提供源码，尚未上传可直接下载的预编译发行包。构建需要 Windows 和 .NET 6 SDK。
+从 [Releases](https://github.com/acquiren/WindowLayers/releases/latest) 下载 `WindowLayers-v0.1.0-win-x64.zip`，解压后运行 `WindowLayers.exe`。发行包无需安装 .NET SDK，但电脑需要安装 [.NET 6 Desktop Runtime（x64）](https://dotnet.microsoft.com/download/dotnet/6.0)。启动后请在系统托盘查找图标。
+
+也可以在 Windows 上安装 .NET 6 SDK，从源码构建：
 
 在 PowerShell 中运行：
 
@@ -42,7 +43,7 @@ dotnet build -c Release
 .\bin\Release\net6.0-windows\WindowLayers.exe
 ```
 
-运行后请在系统托盘查找图标。普通构建依赖 **.NET 6 Desktop Runtime**；复制给其他电脑时，请保留整个 `bin/Release/net6.0-windows/` 输出目录，不能只复制 `.exe`。
+普通构建同样依赖 **.NET 6 Desktop Runtime**；复制给其他电脑时，请保留整个 `bin/Release/net6.0-windows/` 输出目录，不能只复制 `.exe`。
 
 ## 使用指南
 
